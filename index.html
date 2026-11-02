@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apex Drone Racing - Менеджер Соревнований</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { 900: '#0a0f1d', 800: '#111827', 700: '#1f293d', 600: '#374151' },
+                        neon: { green: '#00ff66', cyan: '#00f3ff', purple: '#b026ff', pink: '#ff007f' }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS (XLSX) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@500;600;700&display=swap');
+        body { font-family: 'Rajdhani', sans-serif; background-color: #0a0f1d; color: #f3f4f6; }
+        .font-orbitron { font-family: 'Orbitron', sans-serif; }
+        .glow-cyan { box-shadow: 0 0 20px rgba(0, 243, 255, 0.25); }
+        .glow-green { box-shadow: 0 0 20px rgba(0, 255, 102, 0.25); }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #111827; }
+        ::-webkit-scrollbar-thumb { background: #1f293d; border-radius: 4px; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-dark-900 text-gray-100">
+
+    <!-- Toast -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-24 opacity-0 transition-all duration-300 pointer-events-none flex items-center gap-3 px-5 py-4 rounded-xl bg-dark-800 border border-neon-cyan glow-cyan text-white">
+        <i id="toast-icon" class="fa-solid fa-circle-check text-neon-cyan text-xl"></i>
+        <div><h4 id="toast-title" class="font-orbitron font-bold text-sm">Успешно</h4><p id="toast-msg" class="text-xs text-gray-300">Действие выполнено</p></div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-dark-800/90 backdrop-blur-md border-b border-gray-800 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-neon-cyan to-neon-green flex items-center justify-center glow-cyan">
+                    <i class="fa-solid fa-drone text-dark-900 text-xl font-bold"></i>
+                </div>
+                <div>
+                    <h1 class="font-orbitron font-black text-xl tracking-wider bg-gradient-to-r from-neon-cyan via-white to-neon-green bg-clip-text text-transparent">APEX RACING</h1>
+                    <p id="header-subtitle" class="text-xs text-gray-400 font-medium tracking-widest uppercase">Загрузка режима...</p>
+                </div>
+            </div>
+
+            <nav class="hidden xl:flex items-center gap-1 bg-dark-900 p-1.5 rounded-xl border border-gray-800">
+                <button onclick="switchTab('training')" id="nav-training" class="px-3 py-2 rounded-lg font-orbitron text-xs font-bold transition-all flex items-center gap-2 bg-neon-cyan text-dark-900 shadow-lg"><i class="fa-solid fa-users-line"></i> 1. Участники</button>
+                <button onclick="switchTab('heats')" id="nav-heats" class="px-3 py-2 rounded-lg font-orbitron text-xs font-bold transition-all flex items-center gap-2 text-gray-400 hover:text-white"><i class="fa-solid fa-layer-group"></i> 2. Хиты (Группы)</button>
+                <button onclick="switchTab('qualification')" id="nav-qualification" class="px-3 py-2 rounded-lg font-orbitron text-xs font-bold transition-all flex items-center gap-2 text-gray-400 hover:text-white"><i class="fa-solid fa-stopwatch"></i> 3. Квалификация</button>
+                <button onclick="switchTab('playoff')" id="nav-playoff" class="px-3 py-2 rounded-lg font-orbitron text-xs font-bold transition-all flex items-center gap-2 text-gray-400 hover:text-white"><i class="fa-solid fa-sitemap"></i> 4. Финал (Сетка)</button>
+                <button onclick="switchTab('podium')" id="nav-podium" class="px-3 py-2 rounded-lg font-orbitron text-xs font-bold transition-all flex items-center gap-2 text-gray-400 hover:text-white"><i class="fa-solid fa-trophy"></i> 5. Подиум</button>
+            </nav>
+
+            <div class="flex items-center gap-3">
+                <div id="admin-action-btn" class="hidden flex items-center gap-2">
+                    <button onclick="resetAllData()" class="px-3 py-2 rounded-xl bg-dark-700 hover:bg-red-950 border border-gray-700 text-red-400 text-xs font-orbitron flex items-center gap-1.5"><i class="fa-solid fa-rotate-right"></i> Сброс</button>
+                    <button onclick="logoutAdmin()" class="px-3 py-2 rounded-xl bg-dark-700 hover:bg-dark-600 border border-gray-700 text-gray-300 text-xs font-orbitron"><i class="fa-solid fa-right-from-bracket"></i> Выход</button>
+                </div>
+                <div id="auth-btn-container">
+                    <button onclick="openAuthModal()" class="px-4 py-2 rounded-xl bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/50 text-cyan-400 text-xs font-orbitron font-bold flex items-center gap-2 transition-all shadow-md">
+                        <i class="fa-solid fa-lock"></i> Вход для админа
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+
+        <!-- TAB 1: UCHASTNIKI -->
+        <section id="tab-training" class="space-y-6">
+            <div id="admin-training-panel" class="hidden flex-col md:flex-row justify-between items-center gap-4 bg-dark-800 p-6 rounded-2xl border border-gray-800">
+                <div>
+                    <h2 class="font-orbitron font-bold text-2xl text-white flex items-center gap-3">
+                        <i class="fa-solid fa-clipboard-user text-neon-cyan"></i> Этап 1: Список участников и каналы FPV
+                    </h2>
+                    <p class="text-gray-400 text-sm mt-1">Добавление пилотов, выбор частот (R1-R8, A1-F4) и импорт из Excel.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-3">
+                    <label class="cursor-pointer bg-dark-700 hover:bg-dark-600 border border-gray-700 text-white px-4 py-2.5 rounded-xl text-xs font-orbitron font-bold flex items-center gap-2">
+                        <i class="fa-solid fa-file-excel text-neon-green"></i> Импорт из Excel
+                        <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" class="hidden" onchange="importExcel(event)">
+                    </label>
+                    <button onclick="loadDemoPilots()" class="bg-dark-700 hover:bg-dark-600 border border-gray-700 text-neon-cyan px-4 py-2.5 rounded-xl text-xs font-orbitron font-bold">Демо</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Form Add -->
+                <div id="admin-form-container" class="hidden bg-dark-800 p-6 rounded-2xl border border-gray-800 flex flex-col justify-between">
+                    <div>
+                        <h3 class="font-orbitron font-bold text-lg text-white mb-4"><i class="fa-solid fa-user-plus text-neon-green"></i> Добавить пилота</h3>
+                        <form id="add-pilot-form" onsubmit="addPilotManual(event)" class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-orbitron text-gray-400 mb-1">ФИО Пилота *</label>
+                                <input type="text" id="pilot-name" required placeholder="Иванов Алексей" class="w-full bg-dark-900 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white focus:border-neon-cyan">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-orbitron text-gray-400 mb-1">Область / Регион</label>
+                                <input type="text" id="pilot-region" placeholder="Москва" class="w-full bg-dark-900 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white focus:border-neon-cyan">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-orbitron text-gray-400 mb-1">Видеоканал FPV</label>
+                                <select id="pilot-channel" class="w-full bg-dark-900 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white font-mono">
+                                    <option value="R1">R1</option><option value="R2">R2</option><option value="R3">R3</option><option value="R4">R4</option>
+                                    <option value="R5">R5</option><option value="R6">R6</option><option value="R7">R7</option><option value="R8">R8</option>
+                                    <option value="A1">A1</option><option value="A2">A2</option><option value="A3">A3</option><option value="A4">A4</option>
+                                    <option value="B1">B1</option><option value="B2">B2</option><option value="B3">B3</option><option value="B4">B4</option>
+                                    <option value="E1">E1</option><option value="E2">E2</option><option value="E3">E3</option><option value="E4">E4</option>
+                                    <option value="F1">F1</option><option value="F2">F2</option><option value="F3">F3</option><option value="F4">F4</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="w-full py-3 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-green text-dark-900 font-orbitron font-bold text-sm shadow-lg glow-cyan">Зарегистрировать</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Table -->
+                <div id="pilots-table-wrapper" class="lg:col-span-3 bg-dark-800 rounded-2xl border border-gray-800 overflow-hidden">
+                    <div class="p-6 border-b border-gray-800 flex justify-between items-center">
+                        <h3 class="font-orbitron font-bold text-lg text-white">Список пилотов (<span id="training-total-count">0</span>)</h3>
+                        <div id="admin-clear-btn" class="hidden">
+                            <button onclick="clearPilots()" class="text-xs font-orbitron text-red-400 hover:text-red-300"><i class="fa-solid fa-trash-can"></i> Очистить всё</button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto max-h-[480px]">
+                        <table class="w-full text-left border-collapse">
+                            <thead class="bg-dark-900 text-xs font-orbitron text-gray-400 border-b border-gray-800">
+                                <tr>
+                                    <th class="py-3 px-4 w-12 text-center">#</th>
+                                    <th class="py-3 px-4">ФИО Участника</th>
+                                    <th class="py-3 px-4">Область / Регион</th>
+                                    <th class="py-3 px-4 w-32">Канал FPV</th>
+                                    <th id="th-action-col" class="py-3 px-4 text-right w-24 hidden">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pilots-table-body" class="divide-y divide-gray-800 text-sm"></tbody>
+                        </table>
+                    </div>
+                    <div id="admin-next-step-1" class="hidden p-4 bg-dark-900/50 border-t border-gray-800 flex justify-between items-center">
+                        <span class="text-xs text-gray-400">Настроили участников? Перейдите к хитам</span>
+                        <button onclick="switchTab('heats')" class="px-6 py-2.5 rounded-xl bg-neon-cyan text-dark-900 font-orbitron font-bold text-xs">К группам <i class="fa-solid fa-arrow-right"></i></button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: HEATS -->
+        <section id="tab-heats" class="hidden space-y-6">
+            <div id="admin-heats-header" class="hidden flex-col md:flex-row justify-between items-center gap-4 bg-dark-800 p-6 rounded-2xl border border-gray-800">
+                <div>
+                    <h2 class="font-orbitron font-bold text-2xl text-white"><i class="fa-solid fa-layer-group text-neon-cyan"></i> Этап 2: Хиты (Группы вылетов)</h2>
+                    <p class="text-gray-400 text-sm mt-1">Авто-распределение по 4 пилота с проверкой конфликтов каналов.</p>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="autoGenerateHeats()" class="px-4 py-2 bg-dark-700 text-neon-cyan font-orbitron text-xs rounded-xl">Авто (по 4)</button>
+                    <button onclick="createNewHeat()" class="px-4 py-2 bg-neon-cyan text-dark-900 font-orbitron text-xs font-bold rounded-xl">Создать хит</button>
+                </div>
+            </div>
+            <div id="heats-container" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+        </section>
+
+        <!-- TAB 3: QUALIFICATION -->
+        <section id="tab-qualification" class="hidden space-y-6">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-4 bg-dark-800 p-6 rounded-2xl border border-gray-800">
+                <div>
+                    <h2 class="font-orbitron font-bold text-2xl text-white"><i class="fa-solid fa-stopwatch text-neon-cyan"></i> Этап 3: Квалификация</h2>
+                    <p class="text-gray-400 text-sm mt-1">Ввод лучшего времени круга, авто-сортировка лидеров наверх.</p>
+                </div>
+                <div class="flex flex-wrap gap-3">
+                    <button onclick="exportQualificationExcel()" class="px-4 py-2.5 bg-dark-700 text-neon-green font-orbitron text-xs font-bold rounded-xl"><i class="fa-solid fa-file-excel"></i> Экспорт</button>
+                    <div id="admin-gen-bracket-btn" class="hidden">
+                        <button onclick="generatePlayoffBracket()" class="px-5 py-2.5 bg-neon-cyan text-dark-900 font-orbitron font-bold text-xs rounded-xl glow-cyan">Сформировать Топ-16</button>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-dark-800 rounded-2xl border border-gray-800 overflow-hidden">
+                <div class="p-4 border-b border-gray-800 flex justify-between items-center">
+                    <span class="text-xs text-gray-400">Топ-16 проходят в финал</span>
+                    <div id="admin-qual-apply-all" class="hidden">
+                        <button onclick="applyAllQualificationTimes()" class="px-3 py-1.5 bg-dark-700 text-neon-cyan text-xs font-orbitron rounded-xl">Применить всё</button>
+                    </div>
+                </div>
+                <table class="w-full text-left">
+                    <thead class="bg-dark-900 text-xs font-orbitron text-gray-400">
+                        <tr><th class="py-3 px-4 w-16 text-center">Место</th><th class="py-3 px-4">ФИО</th><th class="py-3 px-4">Регион</th><th class="py-3 px-4">Канал</th><th class="py-3 px-4">Время (с)</th><th class="py-3 px-4 text-center">Статус</th><th id="th-qual-action" class="py-3 px-4 text-right hidden">Действие</th></tr>
+                    </thead>
+                    <tbody id="qualification-table-body" class="divide-y divide-gray-800 text-sm"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- TAB 4: PLAYOFF -->
+        <section id="tab-playoff" class="hidden space-y-6">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-4 bg-dark-800 p-6 rounded-2xl border border-gray-800">
+                <div>
+                    <h2 class="font-orbitron font-bold text-2xl text-white"><i class="fa-solid fa-sitemap text-neon-cyan"></i> Этап 4: Финал Топ-16</h2>
+                    <p class="text-gray-400 text-sm mt-1">Сетка плей-офф (1 vs 16). Раунды до 2 побед (Bo3).</p>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="exportPlayoffExcel()" class="px-4 py-2.5 bg-dark-700 text-neon-cyan font-orbitron text-xs font-bold rounded-xl">Экспорт сетки</button>
+                    <div id="admin-bracket-reset" class="hidden">
+                        <button onclick="generatePlayoffBracket()" class="px-4 py-2.5 bg-dark-700 text-gray-300 font-orbitron text-xs font-bold rounded-xl">Сбросить сетку</button>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 overflow-x-auto pb-2">
+                <button onclick="setPlayoffRoundView('all')" id="p-view-all" class="px-4 py-2 rounded-xl font-orbitron text-xs font-bold bg-neon-cyan text-dark-900 whitespace-nowrap">Вся сетка</button>
+                <button onclick="setPlayoffRoundView('1_8')" id="p-view-1_8" class="px-4 py-2 rounded-xl font-orbitron text-xs font-bold bg-dark-800 border border-gray-800 text-gray-300 whitespace-nowrap">1/8 финала</button>
+                <button onclick="setPlayoffRoundView('1_4')" id="p-view-1_4" class="px-4 py-2 rounded-xl font-orbitron text-xs font-bold bg-dark-800 border border-gray-800 text-gray-300 whitespace-nowrap">Четвертьфиналы</button>
+                <button onclick="setPlayoffRoundView('1_2')" id="p-view-1_2" class="px-4 py-2 rounded-xl font-orbitron text-xs font-bold bg-dark-800 border border-gray-800 text-gray-300 whitespace-nowrap">Полуфиналы</button>
+                <button onclick="setPlayoffRoundView('final')" id="p-view-final" class="px-4 py-2 rounded-xl font-orbitron text-xs font-bold bg-dark-800 border border-gray-800 text-gray-300 whitespace-nowrap">Финал и за 3 место</button>
+            </div>
+            <div class="bg-dark-800 p-6 rounded-2xl border border-gray-800 overflow-x-auto min-h-[500px]">
+                <div id="bracket-container" class="flex gap-8 items-center min-w-[900px] justify-around py-4"></div>
+            </div>
+        </section>
+
+        <!-- TAB 5: PODIUM -->
+        <section id="tab-podium" class="hidden space-y-6">
+            <div class="bg-dark-800 p-8 rounded-2xl border border-gray-800 text-center relative overflow-hidden">
+                <div class="inline-flex w-16 h-16 rounded-2xl bg-gradient-to-tr from-neon-cyan to-neon-green items-center justify-center glow-cyan mb-4">
+                    <i class="fa-solid fa-trophy text-dark-900 text-3xl"></i>
+                </div>
+                <h2 class="font-orbitron font-black text-3xl text-white">ПЬЕДЕСТАЛ ПОЧЕТА</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto my-8 items-end">
+                    <div class="bg-dark-900 p-6 rounded-xl border border-gray-800"><h4 class="font-orbitron text-gray-300 text-sm">2 Место (Серебро)</h4><p id="podium-name-2" class="font-bold text-white mt-2">-</p><p id="podium-region-2" class="text-xs text-gray-400">-</p></div>
+                    <div class="bg-dark-900 p-6 rounded-xl border-2 border-neon-cyan glow-cyan -translate-y-2"><h4 class="font-orbitron text-neon-cyan text-sm">1 Место (Чемпион)</h4><p id="podium-name-1" class="font-extrabold text-white mt-2 text-lg">-</p><p id="podium-region-1" class="text-xs text-neon-cyan">-</p></div>
+                    <div class="bg-dark-900 p-6 rounded-xl border border-gray-800"><h4 class="font-orbitron text-amber-500 text-sm">3 Место (Бронза)</h4><p id="podium-name-3" class="font-bold text-white mt-2">-</p><p id="podium-region-3" class="text-xs text-gray-400">-</p></div>
+                </div>
+                <button onclick="exportPodiumReport()" class="px-6 py-3 bg-neon-green text-dark-900 font-orbitron font-bold text-xs rounded-xl shadow-lg">Экспорт отчета призеров</button>
+            </div>
+        </section>
+    </main>
+
+    <!-- Auth Modal -->
+    <div id="auth-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-dark-800 border border-gray-800 rounded-2xl max-w-sm w-full p-6 space-y-4 glow-cyan">
+            <h3 class="font-orbitron font-bold text-lg text-white">Вход администратора</h3>
+            <p class="text-xs text-gray-400">Пароль организатора (по умолчанию: admin123)</p>
+            <input type="password" id="admin-password-input" placeholder="Пароль" class="w-full bg-dark-900 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white focus:border-neon-cyan">
+            <div class="flex justify-end gap-2 pt-2">
+                <button onclick="closeAuthModal()" class="px-4 py-2 bg-dark-700 text-gray-300 rounded-xl text-xs font-orbitron">Отмена</button>
+                <button onclick="checkAdminPassword()" class="px-4 py-2 bg-neon-cyan text-dark-900 rounded-xl text-xs font-orbitron font-bold">Войти</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Match Modal -->
+    <div id="match-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-dark-800 border border-gray-800 rounded-2xl max-w-lg w-full p-6 space-y-4 glow-cyan">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <div><h3 id="modal-match-title" class="font-orbitron font-bold text-white">Матч плей-офф</h3><p class="text-xs text-gray-400">До 2 побед (3 раунда)</p></div>
+                <button onclick="closeMatchModal()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="grid grid-cols-2 text-center bg-dark-900 p-4 rounded-xl">
+                <div><span id="modal-p1-name" class="font-bold text-neon-cyan text-sm">Пилот 1</span><div id="modal-p1-score" class="text-2xl font-orbitron font-bold text-neon-cyan">0</div></div>
+                <div><span id="modal-p2-name" class="font-bold text-neon-pink text-sm">Пилот 2</span><div id="modal-p2-score" class="text-2xl font-orbitron font-bold text-neon-pink">0</div></div>
+            </div>
+            <div class="space-y-2">
+                <div class="flex justify-between items-center bg-dark-900 p-3 rounded-xl"><span class="text-xs font-orbitron">Раунд 1</span><div class="flex gap-2"><button onclick="setRoundWinner(1,1)" id="r1-p1-btn" class="px-3 py-1 bg-dark-700 text-xs rounded font-bold">Пилот 1</button><button onclick="setRoundWinner(1,2)" id="r1-p2-btn" class="px-3 py-1 bg-dark-700 text-xs rounded font-bold">Пилот 2</button></div></div>
+                <div class="flex justify-between items-center bg-dark-900 p-3 rounded-xl"><span class="text-xs font-orbitron">Раунд 2</span><div class="flex gap-2"><button onclick="setRoundWinner(2,1)" id="r2-p1-btn" class="px-3 py-1 bg-dark-700 text-xs rounded font-bold">Пилот 1</button><button onclick="setRoundWinner(2,2)" id="r2-p2-btn" class="px-3 py-1 bg-dark-700 text-xs rounded font-bold">Пилот 2</button></div></div>
+                <div class="flex justify-between items-center bg-dark-900 p-3 rounded-xl"><span class="text-xs font-orbitron">Раунд 3</span><div class="flex gap-2"><button onclick="setRoundWinner(3,1)" id="r3-p1-btn" class="px-3 py-1 bg-dark-700 text-xs rounded font-bold">Пилот 1</button><button onclick="setRoundWinner(3,2)" id="r3-p2-btn" class="px-3 py-1 bg-dark-700 text-xs rounded font-bold">Пилот 2</button></div></div>
+            </div>
+            <div class="flex justify-end pt-2">
+                <button onclick="closeMatchModal()" class="px-4 py-2 bg-dark-700 text-white rounded-xl text-xs font-orbitron font-bold">Готово</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK & Core Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDEhpwNIOCaas7r3sNWPkXy-Ov9sRBbSR0",
+            authDomain: "aerorace.firebaseapp.com",
+            projectId: "aerorace",
+            storageBucket: "aerorace.firebasestorage.app",
+            messagingSenderId: "279410018299",
+            appId: "1:279410018299:web:7f5d4e79f3affc9c306d5e",
+            measurementId: "G-NRFQDGRCEC"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const docRef = doc(db, "races", "current_race");
+
+        let isAdmin = sessionStorage.getItem('apex_is_admin') === 'true';
+
+        let state = {
+            pilots: [], heats: [],
+            playoff: { matches1_8: [], matches1_4: [], matches1_2: [], matchesFinal: null, matchesThird: null },
+            activeMatchId: null, activeTab: 'training', playoffView: 'all'
+        };
+
+        const standardChannels = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'A1', 'A2', 'A3', 'A4', 'B1', 'B2', 'B3', 'B4', 'E1', 'E2', 'E3', 'E4', 'F1', 'F2', 'F3', 'F4'];
+
+        window.addEventListener('DOMContentLoaded', () => {
+            updateAdminUI();
+            onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    state = docSnap.data();
+                    renderAll();
+                } else if (isAdmin) {
+                    setDoc(docRef, state);
+                }
+            });
+        });
+
+        window.openAuthModal = function() { document.getElementById('auth-modal').classList.remove('hidden'); document.getElementById('auth-modal').classList.add('flex'); }
+        window.closeAuthModal = function() { document.getElementById('auth-modal').classList.remove('flex'); document.getElementById('auth-modal').classList.add('hidden'); }
+
+        window.checkAdminPassword = function() {
+            const pass = document.getElementById('admin-password-input').value;
+            if (pass === 'admin123') {
+                isAdmin = true;
+                sessionStorage.setItem('apex_is_admin', 'true');
+                closeAuthModal();
+                updateAdminUI();
+                renderAll();
+                showToast("Успешно", "Вход выполнен", "success");
+            } else {
+                showToast("Ошибка", "Неверный пароль", "error");
+            }
+            document.getElementById('admin-password-input').value = '';
+        }
+
+        window.logoutAdmin = function() {
+            isAdmin = false;
+            sessionStorage.removeItem('apex_is_admin');
+            updateAdminUI();
+            renderAll();
+            showToast("Выход", "Вы вышли из режима админа", "info");
+        }
+
+        function updateAdminUI() {
+            if (isAdmin) {
+                document.getElementById('header-subtitle').innerText = 'Панель Администратора';
+                document.getElementById('admin-action-btn').classList.remove('hidden');
+                document.getElementById('auth-btn-container').classList.add('hidden');
+                document.getElementById('admin-training-panel').classList.remove('hidden');
+                document.getElementById('admin-form-container').classList.remove('hidden');
+                document.getElementById('pilots-table-wrapper').className = 'lg:col-span-2 bg-dark-800 rounded-2xl border border-gray-800 overflow-hidden';
+                document.getElementById('admin-clear-btn').classList.remove('hidden');
+                document.getElementById('th-action-col').classList.remove('hidden');
+                document.getElementById('admin-next-step-1').classList.remove('hidden');
+                document.getElementById('admin-heats-header').classList.remove('hidden');
+                document.getElementById('admin-gen-bracket-btn').classList.remove('hidden');
+                document.getElementById('th-qual-action').classList.remove('hidden');
+                document.getElementById('admin-qual-apply-all').classList.remove('hidden');
+                document.getElementById('admin-bracket-reset').classList.remove('hidden');
+            } else {
+                document.getElementById('header-subtitle').innerText = 'Онлайн-трансляция (Режим зрителя)';
+                document.getElementById('admin-action-btn').classList.add('hidden');
+                document.getElementById('auth-btn-container').classList.remove('hidden');
+                document.getElementById('admin-training-panel').classList.add('hidden');
+                document.getElementById('admin-form-container').classList.add('hidden');
+                document.getElementById('pilots-table-wrapper').className = 'lg:col-span-3 bg-dark-800 rounded-2xl border border-gray-800 overflow-hidden';
+                document.getElementById('admin-clear-btn').classList.add('hidden');
+                document.getElementById('th-action-col').classList.add('hidden');
+                document.getElementById('admin-next-step-1').classList.add('hidden');
+                document.getElementById('admin-heats-header').classList.add('hidden');
+                document.getElementById('admin-gen-bracket-btn').classList.add('hidden');
+                document.getElementById('th-qual-action').classList.add('hidden');
+                document.getElementById('admin-qual-apply-all').classList.add('hidden');
+                document.getElementById('admin-bracket-reset').classList.add('hidden');
+            }
+        }
+
+        async function syncToFirebase() {
+            if (!isAdmin) return;
+            await setDoc(docRef, state);
+        }
+
+        window.resetAllData = async function() {
+            if (!isAdmin) return;
+            if (confirm("Сбросить все данные соревнований?")) {
+                state = { pilots: [], heats: [], playoff: { matches1_8: [], matches1_4: [], matches1_2: [], matchesFinal: null, matchesThird: null }, activeMatchId: null, activeTab: 'training', playoffView: 'all' };
+                await syncToFirebase();
+                showToast("Сброс", "Данные очищены", "info");
+            }
+        }
+
+        window.showToast = function(title, msg, type = 'success') {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-title').innerText = title;
+            document.getElementById('toast-msg').innerText = msg;
+            toast.className = `fixed bottom-5 right-5 z-50 transform translate-y-0 opacity-100 transition-all duration-300 flex items-center gap-3 px-5 py-4 rounded-xl bg-dark-800 border ${type==='success'?'border-neon-green':'border-neon-cyan'} text-white`;
+            setTimeout(() => { toast.className = 'fixed bottom-5 right-5 z-50 transform translate-y-24 opacity-0 transition-all duration-300 pointer-events-none flex items-center gap-3 px-5 py-4 rounded-xl bg-dark-800 border border-neon-cyan text-white'; }, 3000);
+        }
+
+        window.switchTab = function(tabId) {
+            state.activeTab = tabId;
+            ['training', 'heats', 'qualification', 'playoff', 'podium'].forEach(t => {
+                document.getElementById(`tab-${t}`).classList.toggle('hidden', t !== tabId);
+                const btn = document.getElementById(`nav-${t}`);
+                if (btn) btn.className = (t === tabId) ? "px-3 py-2 rounded-lg font-orbitron text-xs font-bold bg-neon-cyan text-dark-900 shadow-lg flex items-center gap-2" : "px-3 py-2 rounded-lg font-orbitron text-xs font-bold text-gray-400 hover:text-white flex items-center gap-2";
+            });
+            renderAll();
+        }
+
+        window.loadDemoPilots = async function() {
+            if (!isAdmin) return;
+            const names = [["Иванов Алексей", "Москва"], ["Смирнов Дмитрий", "СПб"], ["Петрова Елена", "Нижний Новгород"], ["Васильев Максим", "Краснодар"], ["Ковалев Артем", "Екатеринбург"], ["Соколов Никита", "Казань"], ["Морозов Антон", "Москва"], ["Федоров Роман", "Ростов"], ["Николаев Иван", "Самара"], ["Павлов Кирилл", "Новосибирск"], ["Григорьев Денис", "Челябинск"], ["Оболенский Владислав", "Пермь"], ["Беляев Артур", "Воронеж"], ["Жуков Максим", "Омск"], ["Борисов Станислав", "Красноярск"], ["Егоров Тимур", "Московская обл."] ];
+            state.pilots = names.map((n, i) => ({ id: 'p_'+i, name: n[0], region: n[1], channel: standardChannels[i%standardChannels.length], qualTime: 12 + i*0.35 }));
+            autoGenerateHeats(true);
+            await syncToFirebase();
+            renderAll();
+            showToast("Демо", "Загружено 16 участников", "success");
+        }
+
+        window.addPilotManual = async function(e) {
+            e.preventDefault();
+            if (!isAdmin) return;
+            const name = document.getElementById('pilot-name').value.trim();
+            const region = document.getElementById('pilot-region').value.trim() || 'Регион';
+            const channel = document.getElementById('pilot-channel').value;
+            state.pilots.push({ id: 'p_' + Date.now(), name, region, channel, qualTime: null });
+            document.getElementById('add-pilot-form').reset();
+            await syncToFirebase();
+            renderAll();
+        }
+
+        window.updatePilotChannel = async function(pilotId, newChannel) {
+            if (!isAdmin) return;
+            const p = state.pilots.find(x => x.id === pilotId);
+            if (p) { p.channel = newChannel; await syncToFirebase(); renderHeats(); }
+        }
+
+        window.deletePilot = async function(id) {
+            if (!isAdmin) return;
+            state.pilots = state.pilots.filter(p => p.id !== id);
+            state.heats.forEach(h => { h.pilotIds = h.pilotIds.filter(pid => pid !== id); });
+            await syncToFirebase();
+            renderAll();
+        }
+
+        window.clearPilots = async function() {
+            if (!isAdmin) return;
+            if (confirm("Удалить всех?")) { state.pilots = []; state.heats = []; await syncToFirebase(); renderAll(); }
+        }
+
+        window.importExcel = function(event) {
+            if (!isAdmin) return;
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                    let added = 0;
+                    for (let i = 1; i < json.length; i++) {
+                        const row = json[i];
+                        if (row && row[0]) {
+                            const name = String(row[0]).trim();
+                            const region = row[1] ? String(row[1]).trim() : 'Регион';
+                            const channel = row[2] && standardChannels.includes(String(row[2]).trim().toUpperCase()) ? String(row[2]).trim().toUpperCase() : standardChannels[added % standardChannels.length];
+                            const timeVal = row[3] ? parseFloat(row[3]) : null;
+                            if (name) {
+                                state.pilots.push({ id: 'imp_' + Date.now() + '_' + i, name, region, channel, qualTime: timeVal });
+                                added++;
+                            }
+                        }
+                    }
+                    await syncToFirebase();
+                    renderAll();
+                    showToast("Импорт завершен", `Загружено: ${added}`, "success");
+                } catch(err) {
+                    showToast("Ошибка", "Не удалось прочитать Excel", "error");
+                }
+                event.target.value = '';
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        window.autoGenerateHeats = async function(silent = false) {
+            if (!isAdmin) return;
+            state.heats = [];
+            let heatIdx = 1;
+            for (let i = 0; i < state.pilots.length; i += 4) {
+                state.heats.push({ id: 'heat_' + heatIdx, name: `Хит #${heatIdx}`, pilotIds: state.pilots.slice(i, i + 4).map(p => p.id) });
+                heatIdx++;
+            }
+            await syncToFirebase();
+            renderHeats();
+            if (!silent) showToast("Хиты сформированы", "", "success");
+        }
+
+        window.createNewHeat = async function() {
+            if (!isAdmin) return;
+            state.heats.push({ id: 'heat_' + Date.now(), name: `Хит #${state.heats.length + 1}`, pilotIds: [] });
+            await syncToFirebase();
+            renderHeats();
+        }
+
+        window.deleteHeat = async function(id) {
+            if (!isAdmin) return;
+            state.heats = state.heats.filter(h => h.id !== id);
+            await syncToFirebase();
+            renderHeats();
+        }
+
+        window.addPilotToHeat = async function(heatId, pilotId) {
+            if (!isAdmin || !pilotId) return;
+            const h = state.heats.find(x => x.id === heatId);
+            if (h && !h.pilotIds.includes(pilotId)) { h.pilotIds.push(pilotId); await syncToFirebase(); renderHeats(); }
+        }
+
+        window.removePilotFromHeat = async function(heatId, pilotId) {
+            if (!isAdmin) return;
+            const h = state.heats.find(x => x.id === heatId);
+            if (h) { h.pilotIds = h.pilotIds.filter(id => id !== pilotId); await syncToFirebase(); renderHeats(); }
+        }
+
+        window.applyQualTime = async function(id) {
+            if (!isAdmin) return;
+            const p = state.pilots.find(x => x.id === id);
+            const val = parseFloat(document.getElementById(`time-input-${id}`).value);
+            if (p && !isNaN(val)) { p.qualTime = val; await syncToFirebase(); renderAll(); showToast("Сохранено", "", "success"); }
+        }
+
+        window.applyAllQualificationTimes = async function() {
+            if (!isAdmin) return;
+            state.pilots.forEach(p => {
+                const el = document.getElementById(`time-input-${p.id}`);
+                if (el && el.value.trim() !== '') {
+                    const v = parseFloat(el.value);
+                    if (!isNaN(v)) p.qualTime = v;
+                }
+            });
+            await syncToFirebase();
+            renderAll();
+            showToast("Применено", "", "success");
+        }
+
+        window.generatePlayoffBracket = async function() {
+            if (!isAdmin) return;
+            const sorted = [...state.pilots].sort((a,b)=>(a.qualTime===null?1:b.qualTime===null?-1:a.qualTime-b.qualTime));
+            const top16 = [];
+            for (let i = 0; i < 16; i++) top16.push(sorted[i] || { id: 'dummy_'+i, name: `Свободно #${i+1}`, region: '-', channel: 'R1' });
+            const pairs = [[0,15],[7,8],[3,12],[4,11],[1,14],[6,9],[2,13],[5,10]];
+            state.playoff.matches1_8 = pairs.map((p, i) => ({ id: 'm1_8_'+i, roundName: '1/8 финала', p1: top16[p[0]], p2: top16[p[1]], scores: [0,0], roundsDetail: [{winner:null},{winner:null},{winner:null}], winner: null }));
+            state.playoff.matches1_4 = [0,1,2,3].map(i => ({ id: 'm1_4_'+i, roundName: 'Четвертьфинал', p1: null, p2: null, scores: [0,0], roundsDetail: [{winner:null},{winner:null},{winner:null}], winner: null }));
+            state.playoff.matches1_2 = [0,1].map(i => ({ id: 'm1_2_'+i, roundName: 'Полуфинал', p1: null, p2: null, scores: [0,0], roundsDetail: [{winner:null},{winner:null},{winner:null}], winner: null }));
+            state.playoff.matchesFinal = { id: 'm_final', roundName: 'Финал', p1: null, p2: null, scores: [0,0], roundsDetail: [{winner:null},{winner:null},{winner:null}], winner: null };
+            state.playoff.matchesThird = { id: 'm_third', roundName: 'За 3 место', p1: null, p2: null, scores: [0,0], roundsDetail: [{winner:null},{winner:null},{winner:null}], winner: null };
+            await syncToFirebase();
+            renderAll();
+            showToast("Сетка", "Сетка Топ-16 создана", "success");
+        }
+
+        window.updateBracketProgression = function() {
+            for (let i = 0; i < 4; i++) {
+                state.playoff.matches1_4[i].p1 = state.playoff.matches1_8[i*2].winner;
+                state.playoff.matches1_4[i].p2 = state.playoff.matches1_8[i*2+1].winner;
+            }
+            for (let i = 0; i < 2; i++) {
+                state.playoff.matches1_2[i].p1 = state.playoff.matches1_4[i*2].winner;
+                state.playoff.matches1_2[i].p2 = state.playoff.matches1_4[i*2+1].winner;
+            }
+            state.playoff.matchesFinal.p1 = state.playoff.matches1_2[0].winner;
+            state.playoff.matchesFinal.p2 = state.playoff.matches1_2[1].winner;
+            const l1 = state.playoff.matches1_2[0].winner ? (state.playoff.matches1_2[0].winner.id === state.playoff.matches1_2[0].p1?.id ? state.playoff.matches1_2[0].p2 : state.playoff.matches1_2[0].p1) : null;
+            const l2 = state.playoff.matches1_2[1].winner ? (state.playoff.matches1_2[1].winner.id === state.playoff.matches1_2[1].p1?.id ? state.playoff.matches1_2[1].p2 : state.playoff.matches1_2[1].p1) : null;
+            state.playoff.matchesThird.p1 = l1; state.playoff.matchesThird.p2 = l2;
+        }
+
+        window.openMatchModal = function(id) {
+            if (!isAdmin) return;
+            state.activeMatchId = id;
+            const m = findMatch(id);
+            if (!m || !m.p1 || !m.p2) return;
+            document.getElementById('modal-match-title').innerText = m.roundName;
+            document.getElementById('modal-p1-name').innerText = m.p1.name;
+            document.getElementById('modal-p1-score').innerText = m.scores[0];
+            document.getElementById('modal-p2-name').innerText = m.p2.name;
+            document.getElementById('modal-p2-score').innerText = m.scores[1];
+
+            for (let r = 1; r <= 3; r++) {
+                const w = m.roundsDetail[r-1].winner;
+                document.getElementById(`r${r}-p1-btn`).className = "px-3 py-1 rounded text-xs font-bold " + (w===1?"bg-neon-cyan text-dark-900":"bg-dark-700 text-gray-300");
+                document.getElementById(`r${r}-p2-btn`).className = "px-3 py-1 rounded text-xs font-bold " + (w===2?"bg-neon-pink text-white":"bg-dark-700 text-gray-300");
+            }
+
+            document.getElementById('match-modal').classList.remove('hidden');
+            document.getElementById('match-modal').classList.add('flex');
+        }
+
+        window.closeMatchModal = async function() {
+            document.getElementById('match-modal').classList.remove('flex');
+            document.getElementById('match-modal').classList.add('hidden');
+            updateBracketProgression();
+            await syncToFirebase();
+            renderAll();
+        }
+
+        function findMatch(id) {
+            if (id.startsWith('m1_8')) return state.playoff.matches1_8.find(x => x.id === id);
+            if (id.startsWith('m1_4')) return state.playoff.matches1_4.find(x => x.id === id);
+            if (id.startsWith('m1_2')) return state.playoff.matches1_2.find(x => x.id === id);
+            if (id === 'm_final') return state.playoff.matchesFinal;
+            if (id === 'm_third') return state.playoff.matchesThird;
+        }
+
+        window.setRoundWinner = function(r, pNum) {
+            const m = findMatch(state.activeMatchId);
+            if (!m) return;
+            m.roundsDetail[r-1].winner = (m.roundsDetail[r-1].winner === pNum) ? null : pNum;
+            let s1 = 0, s2 = 0;
+            m.roundsDetail.forEach(x => { if(x.winner===1)s1++; if(x.winner===2)s2++; });
+            m.scores = [s1, s2];
+            m.winner = s1 >= 2 ? m.p1 : s2 >= 2 ? m.p2 : null;
+
+            document.getElementById('modal-p1-score').innerText = s1;
+            document.getElementById('modal-p2-score').innerText = s2;
+            for (let i = 1; i <= 3; i++) {
+                const w = m.roundsDetail[i-1].winner;
+                document.getElementById(`r${i}-p1-btn`).className = "px-3 py-1 rounded text-xs font-bold " + (w===1?"bg-neon-cyan text-dark-900":"bg-dark-700 text-gray-300");
+                document.getElementById(`r${i}-p2-btn`).className = "px-3 py-1 rounded text-xs font-bold " + (w===2?"bg-neon-pink text-white":"bg-dark-700 text-gray-300");
+            }
+        }
+
+        window.setPlayoffRoundView = function(view) {
+            state.playoffView = view;
+            ['all', '1_8', '1_4', '1_2', 'final'].forEach(v => {
+                const btn = document.getElementById(`p-view-${v}`);
+                if (btn) btn.className = (v === view) ? "px-4 py-2 rounded-xl font-orbitron text-xs font-bold bg-neon-cyan text-dark-900 whitespace-nowrap" : "px-4 py-2 rounded-xl font-orbitron text-xs font-bold bg-dark-800 border border-gray-800 text-gray-300 whitespace-nowrap";
+            });
+            renderBracket();
+        }
+
+        window.renderAll = function() {
+            renderTrainingTable(); renderHeats(); renderQualTable(); updateBracketProgression(); renderBracket(); renderPodium();
+        }
+
+        function renderTrainingTable() {
+            const tb = document.getElementById('pilots-table-body');
+            document.getElementById('training-total-count').innerText = state.pilots.length;
+            if (state.pilots.length === 0) {
+                tb.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-gray-500 font-orbitron text-xs">Список пуст</td></tr>`;
+                return;
+            }
+            tb.innerHTML = state.pilots.map((p, i) => `
+                <tr class="hover:bg-dark-900/40 transition-all">
+                    <td class="py-3 px-4 text-center font-orbitron text-xs text-gray-400">${i+1}</td>
+                    <td class="py-3 px-4 font-semibold text-white">${p.name}</td>
+                    <td class="py-3 px-4 text-gray-300 text-xs">${p.region}</td>
+                    <td class="py-3 px-4">
+                        ${isAdmin ? `<select onchange="updatePilotChannel('${p.id}', this.value)" class="bg-dark-900 border border-gray-700 rounded px-2 py-1 text-xs font-mono text-neon-cyan">${standardChannels.map(ch => `<option value="${ch}" ${p.channel === ch ? 'selected' : ''}>${ch}</option>`).join('')}</select>` : `<span class="font-mono text-xs text-neon-cyan">${p.channel}</span>`}
+                    </td>
+                    ${isAdmin ? `<td class="py-3 px-4 text-right"><button onclick="deletePilot('${p.id}')" class="text-red-400 hover:text-red-300"><i class="fa-solid fa-trash-can text-xs"></i></button></td>` : ''}
+                </tr>
+            `).join('');
+        }
+
+        function renderHeats() {
+            const container = document.getElementById('heats-container');
+            if (!container) return;
+            if (state.heats.length === 0) {
+                container.innerHTML = `<div class="col-span-2 text-center py-12 text-gray-400 font-orbitron text-xs">Нет групп вылетов</div>`;
+                return;
+            }
+            container.innerHTML = state.heats.map(h => {
+                const counts = {};
+                h.pilotIds.forEach(pid => { const p = state.pilots.find(x=>x.id===pid); if(p) counts[p.channel] = (counts[p.channel]||0)+1; });
+                const conflict = Object.values(counts).some(c => c > 1);
+
+                return `
+                    <div class="bg-dark-800 p-5 rounded-xl border ${conflict?'border-amber-500 glow-cyan':'border-gray-800'} flex flex-col justify-between">
+                        <div>
+                            <div class="flex justify-between items-center mb-3">
+                                <div class="flex items-center gap-2"><h4 class="font-orbitron font-bold text-white">${h.name}</h4>${conflict?'<span class="text-[10px] text-amber-400 bg-amber-500/20 px-1.5 py-0.5 rounded">Конфликт каналов</span>':''}</div>
+                                ${isAdmin?`<button onclick="deleteHeat('${h.id}')" class="text-red-400 text-xs"><i class="fa-solid fa-trash-can"></i></button>`:''}
+                            </div>
+                            <div class="space-y-2 mb-3">
+                                ${h.pilotIds.map(pid => {
+                                    const p = state.pilots.find(x=>x.id===pid);
+                                    return p ? `<div class="flex justify-between items-center bg-dark-900 p-2.5 rounded-xl text-sm"><div><span class="font-semibold text-white">${p.name}</span><span class="text-xs text-gray-400 block">${p.region}</span></div><div class="flex items-center gap-2"><span class="px-2 py-0.5 bg-neon-cyan/10 text-neon-cyan rounded text-xs font-mono">${p.channel}</span>${isAdmin?`<button onclick="removePilotFromHeat('${h.id}','${p.id}')" class="text-red-400 text-xs"><i class="fa-solid fa-xmark"></i></button>`:''}</div></div>` : '';
+                                }).join('') || '<p class="text-xs text-gray-500 italic">Хит пуст</p>'}
+                            </div>
+                        </div>
+                        ${isAdmin ? `<div class="flex gap-2 pt-3 border-t border-gray-800"><select id="sel-${h.id}" class="flex-1 bg-dark-900 text-xs rounded-xl p-2 text-white border border-gray-700"><option value="">Добавить пилота...</option>${state.pilots.filter(p=>!h.pilotIds.includes(p.id)).map(p=>`<option value="${p.id}">${p.name} [${p.channel}]</option>`).join('')}</select><button onclick="addPilotToHeat('${h.id}', document.getElementById('sel-${h.id}').value)" class="px-4 bg-dark-700 text-neon-cyan text-xs font-orbitron rounded-xl">Ок</button></div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderQualTable() {
+            const sorted = [...state.pilots].sort((a,b)=>(a.qualTime===null?1:b.qualTime===null?-1:a.qualTime-b.qualTime));
+            document.getElementById('qualification-table-body').innerHTML = sorted.map((p,i)=>`
+                <tr class="hover:bg-dark-900/40 transition-all ${i<16&&p.qualTime!==null?'bg-neon-green/5':''}">
+                    <td class="py-3 px-4 text-center font-orbitron font-bold ${i===0&&p.qualTime!==null?'text-neon-cyan':''}">${p.qualTime!==null?i+1:'-'}</td>
+                    <td class="py-3 px-4 font-semibold text-white">${p.name}</td>
+                    <td class="py-3 px-4 text-xs text-gray-300">${p.region}</td>
+                    <td class="py-3 px-4 font-mono text-xs text-neon-cyan">${p.channel}</td>
+                    <td class="py-3 px-4">${isAdmin?`<input type="text" id="time-input-${p.id}" value="${p.qualTime!==null?p.qualTime:''}" placeholder="14.520" class="w-28 bg-dark-900 border border-gray-700 rounded px-2.5 py-1 text-xs text-white font-mono">`:`<span class="font-mono text-white">${p.qualTime!==null?p.qualTime+'с':'-'}</span>`}</td>
+                    <td class="py-3 px-4 text-center">${i<16&&p.qualTime!==null?'<span class="text-[10px] font-orbitron bg-neon-green/10 text-neon-green px-2 py-0.5 rounded">Топ-16</span>':'-'}</td>
+                    ${isAdmin?`<td class="py-3 px-4 text-right"><button onclick="applyQualTime('${p.id}')" class="px-3 py-1 bg-dark-700 hover:bg-neon-cyan hover:text-dark-900 text-xs font-orbitron rounded">Ок</button></td>`:''}
+                </tr>
+            `).join('');
+        }
+
+        function renderBracket() {
+            const renderCard = m => m ? `
+                <div ${isAdmin?`onclick="openMatchModal('${m.id}')"`:""} class="bg-dark-900 border ${m.winner?'border-neon-cyan/60':'border-gray-800'} rounded-xl p-3 w-64 ${isAdmin?'cursor-pointer hover:border-neon-cyan':''} shadow-md">
+                    <div class="flex justify-between items-center text-[10px] font-orbitron text-gray-500 mb-2"><span>${m.roundName}</span>${isAdmin?'<span class="text-neon-cyan"><i class="fa-solid fa-pen"></i> Счет</span>':''}</div>
+                    <div class="flex justify-between items-center py-1.5 px-2 rounded-lg ${m.winner?.id===m.p1?.id?'bg-neon-cyan/10 font-bold text-white':'text-gray-300'}"><span class="truncate text-xs">${m.p1?.name||'TBD'}</span><span class="font-orbitron text-xs ml-2">${m.scores[0]}</span></div>
+                    <div class="flex justify-between items-center py-1.5 px-2 rounded-lg mt-1 ${m.winner?.id===m.p2?.id?'bg-neon-pink/10 font-bold text-white':'text-gray-300'}"><span class="truncate text-xs">${m.p2?.name||'TBD'}</span><span class="font-orbitron text-xs ml-2">${m.scores[1]}</span></div>
+                </div>
+            ` : '';
+
+            const view = state.playoffView;
+            let html = '';
+            if (view === 'all' || view === '1_8') html += `<div class="flex flex-col justify-around gap-4"><div class="text-center text-xs font-orbitron text-neon-cyan font-bold mb-2">1/8 финала</div>${state.playoff.matches1_8.map(renderCard).join('')}</div>`;
+            if (view === 'all' || view === '1_4') html += `<div class="flex flex-col justify-around gap-8"><div class="text-center text-xs font-orbitron text-neon-green font-bold mb-2">Четвертьфиналы</div>${state.playoff.matches1_4.map(renderCard).join('')}</div>`;
+            if (view === 'all' || view === '1_2') html += `<div class="flex flex-col justify-around gap-16"><div class="text-center text-xs font-orbitron text-neon-cyan font-bold mb-2">Полуфиналы</div>${state.playoff.matches1_2.map(renderCard).join('')}</div>`;
+            if (view === 'all' || view === 'final') html += `<div class="flex flex-col justify-center gap-8"><div class="text-center text-xs font-orbitron text-neon-green font-bold mb-2">Главный Финал</div>${renderCard(state.playoff.matchesFinal)}<div class="text-center text-xs font-orbitron text-amber-500 font-bold mt-4 mb-2">За 3 место</div>${renderCard(state.playoff.matchesThird)}</div>`;
+
+            document.getElementById('bracket-container').innerHTML = html;
+        }
+
+        function renderPodium() {
+            const f = state.playoff.matchesFinal, th = state.playoff.matchesThird;
+            document.getElementById('podium-name-1').innerText = f?.winner?.name || 'Ожидание финала';
+            document.getElementById('podium-region-1').innerText = f?.winner?.region || '-';
+
+            const loser = f && f.winner ? (f.winner.id === f.p1?.id ? f.p2 : f.p1) : null;
+            document.getElementById('podium-name-2').innerText = loser?.name || 'Ожидание финала';
+            document.getElementById('podium-region-2').innerText = loser?.region || '-';
+
+            document.getElementById('podium-name-3').innerText = th?.winner?.name || 'Ожидание матча';
+            document.getElementById('podium-region-3').innerText = th?.winner?.region || '-';
+        }
+
+        window.exportPlayoffExcel = function() {
+            let data = [];
+            [...state.playoff.matches1_8, ...state.playoff.matches1_4, ...state.playoff.matches1_2, state.playoff.matchesThird, state.playoff.matchesFinal].forEach(m => {
+                if(m) data.push({ Этап: m.roundName, "Пилот 1": m.p1?.name||'TBD', "Регион 1": m.p1?.region||'-', "Пилот 2": m.p2?.name||'TBD', "Регион 2": m.p2?.region||'-', Счет: `${m.scores[0]} : ${m.scores[1]}`, Победитель: m.winner?.name||'Не завершен' });
+            });
+            XLSX.writeFile(XLSX.utils.book_append_sheet(XLSX.utils.book_new(), XLSX.utils.json_to_sheet(data), "Сетка Плей-офф"), "Playoff_Bracket.xlsx");
+            showToast("Экспорт готов", "", "success");
+        }
+        window.exportPodiumReport = function() {
+            const data = [{Место: "1 (Чемпион)", ФИО: document.getElementById('podium-name-1').innerText, Регион: document.getElementById('podium-region-1').innerText}, {Место: "2 (Серебро)", ФИО: document.getElementById('podium-name-2').innerText, Регион: document.getElementById('podium-region-2').innerText}, {Место: "3 (Бронза)", ФИО: document.getElementById('podium-name-3').innerText, Регион: document.getElementById('podium-region-3').innerText}];
+            XLSX.writeFile(XLSX.utils.book_append_sheet(XLSX.utils.book_new(), XLSX.utils.json_to_sheet(data), "Призеры"), "Podium.xlsx");
+            showToast("Экспорт готов", "", "success");
+        }
+        window.exportQualificationExcel = function() {
+            const data = state.pilots.map((p,i)=>({Место: p.qualTime!==null?i+1:'-', ФИО: p.name, Регион: p.region, Канал: p.channel, Время: p.qualTime!==null?p.qualTime:'-'}));
+            XLSX.writeFile(XLSX.utils.book_append_sheet(XLSX.utils.book_new(), XLSX.utils.json_to_sheet(data), "Квалификация"), "Qualification.xlsx");
+            showToast("Экспорт готов", "", "success");
+        }
+    </script>
+</body>
+</html>
